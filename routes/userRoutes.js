@@ -4,8 +4,16 @@ const router = express.Router();
 
 router.post("/add", async (req, res) => {
   try {
-    const { name, iPAddress, location, deviceType, cnic, phoneNumber } = req.body;
-    const user = new User({ name, iPAddress, location, deviceType, cnic, phoneNumber });
+    const { name, iPAddress, location, deviceType, cnic, phoneNumber } =
+      req.body;
+    const user = new User({
+      name,
+      iPAddress,
+      location,
+      deviceType,
+      cnic,
+      phoneNumber,
+    });
     await user.save();
     res.status(201).json(user);
   } catch (err) {
@@ -16,11 +24,12 @@ router.post("/add", async (req, res) => {
 router.put("/update/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, iPAddress, location, deviceType, cnic, phoneNumber } = req.body;
+    const { name, iPAddress, location, deviceType, cnic, phoneNumber } =
+      req.body;
     const user = await User.findByIdAndUpdate(
       id,
       { name, iPAddress, location, deviceType, cnic, phoneNumber },
-        { new: true }   
+      { new: true },
     );
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -35,12 +44,12 @@ router.put("/update/:id", async (req, res) => {
 router.get("/geolocation", async (req, res) => {
   try {
     // Get IP from request headers (Vercel sets x-forwarded-for, Cloudflare sets cf-connecting-ip)
-    let ip = req.headers["x-forwarded-for"] 
+    let ip = req.headers["x-forwarded-for"]
       ? req.headers["x-forwarded-for"].split(",")[0].trim()
       : req.headers["cf-connecting-ip"]
-      ? req.headers["cf-connecting-ip"]
-      : req.socket.remoteAddress;
-    
+        ? req.headers["cf-connecting-ip"]
+        : req.socket.remoteAddress;
+
     // Remove IPv6 prefix for IPv4 addresses
     if (ip && ip.startsWith("::ffff:")) {
       ip = ip.slice(7);
@@ -54,14 +63,17 @@ router.get("/geolocation", async (req, res) => {
     const fetchWithTimeout = (url, timeout = 5000) => {
       return Promise.race([
         fetch(url),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Timeout")), timeout)
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout")), timeout),
         ),
       ]);
     };
 
     try {
-      const geoRes = await fetchWithTimeout(`https://get.geojs.io/geolocation/ip?ip=${ip}`, 5000);
+      const geoRes = await fetchWithTimeout(
+        `https://get.geojs.io/geolocation/ip?ip=${ip}`,
+        5000,
+      );
       if (geoRes.ok) {
         const geoData = await geoRes.json();
         location = {
@@ -74,7 +86,10 @@ router.get("/geolocation", async (req, res) => {
     } catch (e) {
       console.log("geojs.io failed, trying ip-api.com");
       try {
-        const ipRes = await fetchWithTimeout(`https://ip-api.com/json/${ip}`, 5000);
+        const ipRes = await fetchWithTimeout(
+          `https://ip-api.com/json/${ip}`,
+          5000,
+        );
         if (ipRes.ok) {
           const ipData = await ipRes.json();
           if (ipData.status === "success") {
@@ -93,7 +108,9 @@ router.get("/geolocation", async (req, res) => {
 
     res.json({ ip, location });
   } catch (err) {
-    res.status(500).json({ message: "Failed to get geolocation", error: err.message });
+    res
+      .status(500)
+      .json({ message: "Failed to get geolocation", error: err.message });
   }
 });
 
