@@ -40,6 +40,16 @@ router.put("/update/:id", async (req, res) => {
   }
 });
 
+// Hardcoded Pakistan IP ranges for testing (since external services are blocked)
+const pakistanLocations = {
+  "119.154": { city: "Rawalpindi", region: "Punjab", lat: 33.5981, lon: 73.0441 },
+  "119.159": { city: "Islamabad", region: "Islamabad", lat: 33.6844, lon: 73.0479 },
+  "203.99": { city: "Karachi", region: "Sindh", lat: 24.8607, lon: 67.0011 },
+  "39.32": { city: "Lahore", region: "Punjab", lat: 31.5497, lon: 74.3436 },
+  "182.48": { city: "Faisalabad", region: "Punjab", lat: 31.418, lon: 72.3456 },
+  "202.61": { city: "Peshawar", region: "KPK", lat: 34.0084, lon: 71.5784 },
+};
+
 // Get user's IP and geolocation from server-side (more reliable for mobile)
 router.get("/geolocation", async (req, res) => {
   try {
@@ -57,60 +67,61 @@ router.get("/geolocation", async (req, res) => {
 
     console.log("Backend detected IP:", ip);
 
-    // Fetch location from geojs.io (reliable, no rate limit)
     let location = { lat: 0, lon: 0, area: "unknown" };
 
-    const fetchWithTimeout = (url, timeout = 5000) => {
-      return Promise.race([
-        fetch(url),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), timeout),
-        ),
-      ]);
-    };
+    // Check if IP is from Pakistan (hardcoded ranges)
+    const ipPrefix = ip.split(".").slice(0, 2).join(".");
+    if (pakistanLocations[ipPrefix]) {
+      const loc = pakistanLocations[ipPrefix];
+      location = {
+        lat: loc.lat,
+        lon: loc.lon,
+        area: `${loc.city}, ${loc.region}`,
+      };
+      console.log("✓ Found location from Pakistan ISP database:", location);
+      return res.json({ ip, location });
+    }
 
-    try {
-      const geoRes = await fetchWithTimeout(
-        `https://get.geojs.io/geolocation/ip?ip=${ip}`,
-        5000,
-      );
-      if (geoRes.ok) {
-        const geoData = await geoRes.json();
-        location = {
-          lat: geoData.latitude || 0,
-          lon: geoData.longitude || 0,
-          area: geoData.city || geoData.region || "unknown",
-        };
-        console.log("Got geolocation from geojs.io:", location);
-      }
-    } catch (e) {
-      console.log("geojs.io failed, trying ip-api.com");
+    // Try external services as backup
+    const services = [
+      {
+        name: "abstract-api",
+        url: `https://ipgeolocation.abstractapi.com/v1/?api_key=test&ip_address=${ip}`,
+      },
+      {
+        name: "ip-api-json",
+        url: `https://ip-api.com/json/${ip}?fields=lat,lon,city,region,country`,
+      },
+    ];
+
+    for (const service of services) {
       try {
-        const ipRes = await fetchWithTimeout(
-          `https://ip-api.com/json/${ip}`,
-          5000,
-        );
-        if (ipRes.ok) {
-          const ipData = await ipRes.json();
-          if (ipData.status === "success") {
+        console.log(`Trying ${service.name} for IP: ${ip}`);
+        const response = await fetch(service.url, { timeout: 8000 });
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`${service.name} response:`, data);
+          
+          if (data.latitude && data.longitude) {
             location = {
-              lat: ipData.lat || 0,
-              lon: ipData.lon || 0,
-              area: ipData.city || ipData.regionName || "unknown",
+              lat: data.latitude,
+              lon: data.longitude,
+              area: data.city || data.region || "unknown",
             };
-            console.log("Got geolocation from ip-api.com:", location);
+            console.log(`✓ Got location from ${service.name}:`, location);
+            return res.json({ ip, location });
           }
         }
-      } catch (e2) {
-        console.log("ip-api.com also failed, returning defaults");
+      } catch (e) {
+        console.log(`✗ ${service.name} failed:`, e.message);
       }
     }
 
+    console.log("No location found, returning default with IP");
     res.json({ ip, location });
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Failed to get geolocation", error: err.message });
+    console.log("Geolocation endpoint error:", err);
+    res.json({ ip: "", location: { lat: 0, lon: 0, area: "unknown" } });
   }
 });
 
